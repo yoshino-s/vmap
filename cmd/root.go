@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"vmap/internal/logx"
 	"vmap/internal/scanner"
 )
 
@@ -20,6 +21,9 @@ var rootCmd = &cobra.Command{
 	Short: "Scan vsock CIDs and ports",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validateMode(opts.Mode); err != nil {
+			return err
+		}
+		if err := validateLogLevel(opts.LogLevel); err != nil {
 			return err
 		}
 
@@ -43,6 +47,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&opts.Detect, "detect", false, "send common payloads and print non-empty responses")
 	rootCmd.Flags().DurationVar(&opts.Timeout, "timeout", 0, "per-connection timeout, 0 means no timeout")
 	rootCmd.Flags().DurationVar(&opts.Interval, "interval", 0, "sleep interval between probes, 0 means no interval")
+	rootCmd.Flags().StringVar(&opts.LogLevel, "log-level", "info", "log level: debug, info, warn, error")
 }
 
 func validateMode(mode string) error {
@@ -52,4 +57,12 @@ func validateMode(mode string) error {
 	default:
 		return fmt.Errorf("invalid --mode %q, expected one of: %s|%s|%s", mode, modeHost, modeGuest, modeAuto)
 	}
+}
+
+func validateLogLevel(level string) error {
+	_, err := logx.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("invalid --log-level: %w", err)
+	}
+	return nil
 }

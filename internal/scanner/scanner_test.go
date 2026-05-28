@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -47,5 +48,20 @@ func TestResolvePortTargetsDefaultAll(t *testing.T) {
 	}
 	if len(got) != int(portAllMax-portAllMin+1) {
 		t.Fatalf("expected full port range, got=%d", len(got))
+	}
+}
+
+func TestNewScanner_InvalidLogLevel(t *testing.T) {
+	_, err := New(Options{
+		Mode:      modeHost,
+		CIDInput:  "2",
+		PortInput: "1",
+		LogLevel:  "trace",
+	})
+	if err == nil {
+		t.Fatal("expected invalid log level error")
+	}
+	if !strings.Contains(err.Error(), "invalid log level") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

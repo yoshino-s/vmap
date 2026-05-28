@@ -15,6 +15,7 @@ A simple vsock scanner built with Cobra.
 - terminal progress bar for scan progress
 - connectivity results are replayed in a full summary after connectivity phase
 - `--timeout` and `--interval` are optional, default disabled
+- `--log-level` controls verbosity: `debug`, `info`, `warn`, `error`
 - `CGO_ENABLED=0` compatible builds
 
 ## Installation
@@ -37,6 +38,7 @@ go build -o vmap .
 - `--detect` send common payloads and print non-empty responses
 - `--timeout duration` per-connection timeout, `0` means no timeout
 - `--interval duration` sleep interval between probes, `0` means no interval
+- `--log-level string` log level: `debug`, `info`, `warn`, `error` (default `info`)
 
 ### CID behavior when `--cid` is empty
 
@@ -57,6 +59,13 @@ When `--detect` is enabled, scanner first finishes connectivity checks for all t
 6. random UUID
 
 Any non-empty response is printed.
+
+### Logging
+
+- `info` (default): stage/status, open targets, detect hits, summary
+- `warn`: fallback warnings (for example, local CID unavailable)
+- `error`: reserved for fatal-level messages
+- `debug`: includes detailed probe traces, including detect request payload and response bytes
 
 ## Notes
 

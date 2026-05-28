@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/schollz/progressbar/v3"
+	"vmap/internal/logx"
 	"vmap/internal/rangeparse"
 	"vmap/internal/vsock"
 )
@@ -39,12 +40,14 @@ type Options struct {
 	Detect    bool
 	Timeout   time.Duration
 	Interval  time.Duration
+	LogLevel  string
 }
 
 type Scanner struct {
-	opts  Options
-	cids  []uint32
-	ports []uint32
+	opts   Options
+	cids   []uint32
+	ports  []uint32
+	logger *logx.Logger
 }
 
 type scanTarget struct {
@@ -53,6 +56,14 @@ type scanTarget struct {
 }
 
 func New(opts Options) (*Scanner, error) {
+	if strings.TrimSpace(opts.LogLevel) == "" {
+		opts.LogLevel = "info"
+	}
+	logger, err := logx.NewFromString(opts.LogLevel, os.Stdout)
+	if err != nil {
+		return nil, err
+	}
+
 	requestedMode := opts.Mode
 	resolvedMode, localCID, modeErr := resolveMode(opts.Mode)
 	if modeErr != nil {
@@ -61,7 +72,7 @@ func New(opts Options) (*Scanner, error) {
 
 	if requestedMode == modeAuto && (resolvedMode == modeHost || resolvedMode == modeGuest) {
 		opts.Mode = resolvedMode
-		fmt.Printf("[info] auto mode detected runtime=%s local-cid=%d; overriding mode\n", resolvedMode, localCID)
+		logger.Infof("auto mode detected runtime=%s local-cid=%d; overriding mode", resolvedMode, localCID)
 	}
 
 	cids, err := resolveCIDTargets(opts.CIDInput, resolvedMode, localCID)
@@ -89,14 +100,14 @@ func New(opts Options) (*Scanner, error) {
 	}
 
 	if requestedMode == modeAuto && opts.CIDInput == "" && resolvedMode == modeAuto {
-		fmt.Println("[warn] local CID unavailable in auto mode; CID target falls back to all")
+		logger.Warnf("local CID unavailable in auto mode; CID target falls back to all")
 	}
 
 	if requestedMode == modeGuest && opts.CIDInput == "" && localCID == 0 {
-		fmt.Println("[warn] local CID unavailable in guest mode; CID target falls back to all")
+		logger.Warnf("local CID unavailable in guest mode; CID target falls back to all")
 	}
 
-	return &Scanner{opts: opts, cids: cids, ports: ports}, nil
+	return &Scanner{opts: opts, cids: cids, ports: ports, logger: logger}, nil
 }
 
 func (s *Scanner) Run(ctx context.Context) error {
@@ -104,13 +115,14 @@ func (s *Scanner) Run(ctx context.Context) error {
 	payloads := append([][]byte{}, detectPayloads...)
 	payloads = append(payloads, randomUUID)
 
-	fmt.Printf("[info] mode=%s cids=%d ports=%d detect=%v timeout=%s interval=%s\n",
+	s.logger.Infof("mode=%s cids=%d ports=%d detect=%v timeout=%s interval=%s log-level=%s",
 		s.opts.Mode,
 		len(s.cids),
 		len(s.ports),
 		s.opts.Detect,
 		durationLabel(s.opts.Timeout),
 		durationLabel(s.opts.Interval),
+		s.opts.LogLevel,
 	)
 
 	openTargets, err := s.scanConnectivity(ctx)
@@ -124,11 +136,11 @@ func (s *Scanner) Run(ctx context.Context) error {
 	}
 
 	if len(openTargets) == 0 {
-		fmt.Println("[info] detect phase skipped because no open targets")
+		s.logger.Infof("detect phase skipped because no open targets")
 		return nil
 	}
 
-	fmt.Printf("[info] detect phase starting, open-targets=%d\n", len(openTargets))
+	s.logger.Infof("detect phase starting, open-targets=%d", len(openTargets))
 	if err := s.runDetectPhase(ctx, openTargets, payloads); err != nil {
 		return err
 	}
@@ -155,7 +167,9 @@ func (s *Scanner) scanConnectivity(ctx context.Context) ([]scanTarget, error) {
 			first = false
 
 			open, err := s.probeOpen(cid, port)
-			if err == nil && open {
+			if err != nil {
+				s.logger.Debugf("connectivity probe failed target=%d:%d err=%v", cid, port, err)
+			} else if open {
 				openTargets = append(openTargets, scanTarget{cid: cid, port: port})
 			}
 
@@ -169,24 +183,25 @@ func (s *Scanner) scanConnectivity(ctx context.Context) ([]scanTarget, error) {
 }
 
 func (s *Scanner) probeOpen(cid uint32, port uint32) (bool, error) {
+	s.logger.Debugf("dial connectivity target=%d:%d", cid, port)
 	conn, err := vsock.Dial(cid, port, s.opts.Timeout)
 	if err != nil {
 		return false, err
 	}
 	_ = conn.Close()
 
-	fmt.Printf("[open] %d:%d\n", cid, port)
+	s.logger.Infof("[open] %d:%d", cid, port)
 	return true, nil
 }
 
 func (s *Scanner) printConnectivitySummary(targets []scanTarget) {
-	fmt.Printf("[summary] connectivity scan completed, open-targets=%d\n", len(targets))
+	s.logger.Infof("[summary] connectivity scan completed, open-targets=%d", len(targets))
 	if len(targets) == 0 {
 		return
 	}
-	fmt.Println("[summary] open targets (replay):")
+	s.logger.Infof("[summary] open targets (replay):")
 	for _, target := range targets {
-		fmt.Printf("[open] %d:%d\n", target.cid, target.port)
+		s.logger.Infof("[open] %d:%d", target.cid, target.port)
 	}
 }
 
@@ -202,8 +217,12 @@ func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payl
 			}
 
 			response, err := s.detectOnce(target.cid, target.port, payload)
-			if err == nil && len(response) > 0 {
-				fmt.Printf("[detect] %d:%d payload=%q response=%q\n", target.cid, target.port, payload, response)
+			if err != nil {
+				s.logger.Debugf("detect probe failed target=%d:%d payload=%q err=%v", target.cid, target.port, payload, err)
+			} else if len(response) > 0 {
+				s.logger.Infof("[detect] %d:%d payload=%q response=%q", target.cid, target.port, payload, response)
+			} else {
+				s.logger.Debugf("detect probe empty response target=%d:%d payload=%q", target.cid, target.port, payload)
 			}
 
 			if bar != nil {
@@ -216,16 +235,22 @@ func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payl
 }
 
 func (s *Scanner) detectOnce(cid uint32, port uint32, payload []byte) ([]byte, error) {
+	s.logger.Debugf("dial detect target=%d:%d", cid, port)
 	conn, err := vsock.Dial(cid, port, s.opts.Timeout)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
+	s.logger.Debugf("send payload target=%d:%d payload=%q", cid, port, payload)
 	if len(payload) > 0 {
-		if _, err := conn.Write(payload); err != nil {
+		written, err := conn.Write(payload)
+		if err != nil {
 			return nil, err
 		}
+		s.logger.Debugf("send payload done target=%d:%d bytes=%d", cid, port, written)
+	} else {
+		s.logger.Debugf("send payload skipped write for empty payload target=%d:%d", cid, port)
 	}
 
 	readTimeout := s.opts.Timeout
@@ -240,14 +265,19 @@ func (s *Scanner) detectOnce(cid uint32, port uint32, payload []byte) ([]byte, e
 	n, err := conn.Read(buf)
 	if err != nil {
 		if isTimeout(err) {
+			s.logger.Debugf("receive timeout target=%d:%d", cid, port)
 			return nil, nil
 		}
 		return nil, err
 	}
 	if n <= 0 {
+		s.logger.Debugf("receive empty payload target=%d:%d", cid, port)
 		return nil, nil
 	}
-	return append([]byte{}, buf[:n]...), nil
+
+	response := append([]byte{}, buf[:n]...)
+	s.logger.Debugf("receive response target=%d:%d bytes=%d response=%q", cid, port, n, response)
+	return response, nil
 }
 
 func resolveMode(input string) (string, uint32, error) {
