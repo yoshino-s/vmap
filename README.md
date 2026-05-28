@@ -1,1 +1,72 @@
 # vmap
+
+A simple vsock scanner built with Cobra.
+
+## Features
+
+- Cobra-based CLI
+- `--mode [host|guest|auto]`, default `auto`
+- `--cid` supports list/range/all (`1,2,3`, `1-10`, `all`)
+- `--port` supports list/range/all (`1,2,3`, `1-10`, `all`), default `all`
+- Default behavior checks connectivity only
+- `--detect` sends payloads and prints non-empty responses
+- `--timeout` and `--interval` are optional, default disabled
+- `CGO_ENABLED=0` compatible builds
+
+## Installation
+
+```bash
+go build -o vmap .
+```
+
+## Usage
+
+```bash
+./vmap [flags]
+```
+
+### Flags
+
+- `--mode string` scan mode: `host`, `guest`, `auto` (default `auto`)
+- `--cid string` CID list/range/all
+- `--port string` port list/range/all (default `all`)
+- `--detect` send common payloads and print non-empty responses
+- `--timeout duration` per-connection timeout, `0` means no timeout
+- `--interval duration` sleep interval between probes, `0` means no interval
+
+### CID behavior when `--cid` is empty
+
+- host mode: scan `all`
+- guest mode: scan CID `2` and local CID
+- if local CID cannot be retrieved: scan `all`
+
+### Detect payloads
+
+When `--detect` is enabled, each open port is tested with:
+
+1. empty payload
+2. empty JSON (`{}`)
+3. single newline (`\n`)
+4. single digit (`1`)
+5. single letter (`a`)
+6. random UUID
+
+Any non-empty response is printed.
+
+## Notes
+
+- This tool supports Linux runtime for actual vsock probing.
+- Non-Linux builds are provided for packaging compatibility but return an unsupported error at runtime.
+- `all` CID range in this tool is `0-65535`.
+- `all` port range is `1-65535`.
+
+## Release
+
+Tag pushes like `v1.0.0` trigger GitHub Actions to build and publish release artifacts for:
+
+- linux/amd64
+- linux/arm64
+- darwin/amd64
+- darwin/arm64
+
+All builds use `CGO_ENABLED=0`.

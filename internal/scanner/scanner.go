@@ -1,0 +1,279 @@
+package scanner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"vmap/internal/rangeparse"
+	"vmap/internal/vsock"
+)
+
+const (
+	modeAuto  = "auto"
+	modeHost  = "host"
+	modeGuest = "guest"
+
+	cidAllMin  uint32 = 0
+	cidAllMax  uint32 = 65535
+	portAllMin uint32 = 1
+	portAllMax uint32 = 65535
+)
+
+var detectPayloads = [][]byte{
+	{},
+	[]byte("{}"),
+	[]byte("\n"),
+	[]byte("1"),
+	[]byte("a"),
+}
+
+type Options struct {
+	Mode      string
+	CIDInput  string
+	PortInput string
+	Detect    bool
+	Timeout   time.Duration
+	Interval  time.Duration
+}
+
+type Scanner struct {
+	opts  Options
+	cids  []uint32
+	ports []uint32
+}
+
+func New(opts Options) (*Scanner, error) {
+	resolvedMode, localCID, modeErr := resolveMode(opts.Mode)
+	if modeErr != nil {
+		return nil, modeErr
+	}
+
+	cids, err := resolveCIDTargets(opts.CIDInput, resolvedMode, localCID)
+	if err != nil {
+		return nil, err
+	}
+
+	ports, err := resolvePortTargets(opts.PortInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cids) == 0 {
+		return nil, errors.New("no CID targets resolved")
+	}
+	if len(ports) == 0 {
+		return nil, errors.New("no port targets resolved")
+	}
+
+	if opts.Interval < 0 {
+		return nil, errors.New("--interval must be >= 0")
+	}
+	if opts.Timeout < 0 {
+		return nil, errors.New("--timeout must be >= 0")
+	}
+
+	if opts.Mode == modeAuto && opts.CIDInput == "" && localCID == 0 {
+		fmt.Println("[warn] local CID unavailable in auto mode; CID target falls back to all")
+	}
+
+	if opts.Mode == modeGuest && opts.CIDInput == "" && localCID == 0 {
+		fmt.Println("[warn] local CID unavailable in guest mode; CID target falls back to all")
+	}
+
+	return &Scanner{opts: opts, cids: cids, ports: ports}, nil
+}
+
+func (s *Scanner) Run(ctx context.Context) error {
+	randomUUID := []byte(newUUID())
+	payloads := append([][]byte{}, detectPayloads...)
+	payloads = append(payloads, randomUUID)
+
+	fmt.Printf("[info] mode=%s cids=%d ports=%d detect=%v timeout=%s interval=%s\n",
+		s.opts.Mode,
+		len(s.cids),
+		len(s.ports),
+		s.opts.Detect,
+		durationLabel(s.opts.Timeout),
+		durationLabel(s.opts.Interval),
+	)
+
+	first := true
+	for _, cid := range s.cids {
+		for _, port := range s.ports {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			if !first && s.opts.Interval > 0 {
+				time.Sleep(s.opts.Interval)
+			}
+			first = false
+
+			if err := s.probe(cid, port, payloads); err != nil {
+				continue
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Scanner) probe(cid uint32, port uint32, payloads [][]byte) error {
+	conn, err := vsock.Dial(cid, port, s.opts.Timeout)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+
+	fmt.Printf("[open] %d:%d\n", cid, port)
+	if !s.opts.Detect {
+		return nil
+	}
+
+	for _, payload := range payloads {
+		response, err := s.detectOnce(cid, port, payload)
+		if err != nil {
+			continue
+		}
+		if len(response) > 0 {
+			fmt.Printf("[detect] %d:%d payload=%q response=%q\n", cid, port, payload, response)
+		}
+	}
+
+	return nil
+}
+
+func (s *Scanner) detectOnce(cid uint32, port uint32, payload []byte) ([]byte, error) {
+	conn, err := vsock.Dial(cid, port, s.opts.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	if len(payload) > 0 {
+		if _, err := conn.Write(payload); err != nil {
+			return nil, err
+		}
+	}
+
+	readTimeout := s.opts.Timeout
+	if readTimeout <= 0 {
+		readTimeout = 250 * time.Millisecond
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		if isTimeout(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if n <= 0 {
+		return nil, nil
+	}
+	return append([]byte{}, buf[:n]...), nil
+}
+
+func resolveMode(input string) (string, uint32, error) {
+	mode := strings.ToLower(strings.TrimSpace(input))
+	switch mode {
+	case modeHost:
+		return modeHost, 0, nil
+	case modeGuest:
+		cid, err := vsock.LocalCID()
+		if err != nil {
+			return modeGuest, 0, nil
+		}
+		return modeGuest, cid, nil
+	case modeAuto:
+		cid, err := vsock.LocalCID()
+		if err != nil {
+			return modeAuto, 0, nil
+		}
+		if cid == vsock.HostCID {
+			return modeHost, cid, nil
+		}
+		return modeGuest, cid, nil
+	default:
+		return "", 0, fmt.Errorf("invalid mode %q", input)
+	}
+}
+
+func resolveCIDTargets(input string, mode string, localCID uint32) ([]uint32, error) {
+	parsed, all, err := rangeparse.ParseUint32List(input, cidAllMin, cidAllMax)
+	if err != nil {
+		return nil, fmt.Errorf("parse --cid: %w", err)
+	}
+	if input != "" {
+		if all {
+			return expandRange(cidAllMin, cidAllMax), nil
+		}
+		return parsed, nil
+	}
+
+	switch mode {
+	case modeHost:
+		return expandRange(cidAllMin, cidAllMax), nil
+	case modeGuest:
+		if localCID == 0 {
+			return expandRange(cidAllMin, cidAllMax), nil
+		}
+		if localCID == vsock.HostCID {
+			return []uint32{vsock.HostCID}, nil
+		}
+		return []uint32{vsock.HostCID, localCID}, nil
+	case modeAuto:
+		return expandRange(cidAllMin, cidAllMax), nil
+	default:
+		return nil, fmt.Errorf("cannot resolve CID targets for mode=%s", mode)
+	}
+}
+
+func resolvePortTargets(input string) ([]uint32, error) {
+	if strings.TrimSpace(input) == "" {
+		input = "all"
+	}
+	parsed, all, err := rangeparse.ParseUint32List(input, portAllMin, portAllMax)
+	if err != nil {
+		return nil, fmt.Errorf("parse --port: %w", err)
+	}
+	if all {
+		return expandRange(portAllMin, portAllMax), nil
+	}
+	return parsed, nil
+}
+
+func expandRange(min uint32, max uint32) []uint32 {
+	values := make([]uint32, 0, int(max-min+1))
+	for i := min; i <= max; i++ {
+		values = append(values, i)
+		if i == max {
+			break
+		}
+	}
+	return values
+}
+
+func durationLabel(d time.Duration) string {
+	if d <= 0 {
+		return "disabled"
+	}
+	return d.String()
+}
+
+func isTimeout(err error) bool {
+	type timeout interface {
+		Timeout() bool
+	}
+	if te, ok := err.(timeout); ok {
+		return te.Timeout()
+	}
+	return false
+}
