@@ -69,4 +69,14 @@ Tag pushes like `v1.0.0` trigger GitHub Actions to build and publish release art
 - darwin/amd64
 - darwin/arm64
 
-All builds use `CGO_ENABLED=0`.
+For each platform, two artifact variants are published:
+
+- Standard: `vmap_<version>_<os>_<arch>.tar.gz`
+- Thin: `vmap_<version>_<os>_<arch>_thin.xz`
+
+Thin artifacts are optimized for size using:
+
+- `CGO_ENABLED=0`
+- stripped symbols (`-s -w`)
+- empty build id (`-buildid=`)
+- `xz -9e` maximum compression
