@@ -13,6 +13,7 @@ A simple vsock scanner built with Cobra.
 - `--detect` first completes connectivity scan, then probes only open targets
 - `--detect` sends payloads and prints non-empty responses
 - terminal progress bar for scan progress
+- connectivity results are replayed in a full summary after connectivity phase
 - `--timeout` and `--interval` are optional, default disabled
 - `CGO_ENABLED=0` compatible builds
 

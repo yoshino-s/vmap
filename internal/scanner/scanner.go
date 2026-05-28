@@ -117,17 +117,18 @@ func (s *Scanner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.printConnectivitySummary(openTargets)
 
 	if !s.opts.Detect {
 		return nil
 	}
 
 	if len(openTargets) == 0 {
-		fmt.Println("[info] connectivity scan completed, open-targets=0; skipping detect phase")
+		fmt.Println("[info] detect phase skipped because no open targets")
 		return nil
 	}
 
-	fmt.Printf("[info] connectivity scan completed, open-targets=%d; starting detect phase\n", len(openTargets))
+	fmt.Printf("[info] detect phase starting, open-targets=%d\n", len(openTargets))
 	if err := s.runDetectPhase(ctx, openTargets, payloads); err != nil {
 		return err
 	}
@@ -176,6 +177,17 @@ func (s *Scanner) probeOpen(cid uint32, port uint32) (bool, error) {
 
 	fmt.Printf("[open] %d:%d\n", cid, port)
 	return true, nil
+}
+
+func (s *Scanner) printConnectivitySummary(targets []scanTarget) {
+	fmt.Printf("[summary] connectivity scan completed, open-targets=%d\n", len(targets))
+	if len(targets) == 0 {
+		return
+	}
+	fmt.Println("[summary] open targets (replay):")
+	for _, target := range targets {
+		fmt.Printf("[open] %d:%d\n", target.cid, target.port)
+	}
 }
 
 func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payloads [][]byte) error {
