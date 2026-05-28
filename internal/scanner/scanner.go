@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ type Options struct {
 	Mode      string
 	CIDInput  string
 	PortInput string
+	Payloads  []string
 	Detect    bool
 	Timeout   time.Duration
 	Interval  time.Duration
@@ -111,10 +113,6 @@ func New(opts Options) (*Scanner, error) {
 }
 
 func (s *Scanner) Run(ctx context.Context) error {
-	randomUUID := []byte(newUUID())
-	payloads := append([][]byte{}, detectPayloads...)
-	payloads = append(payloads, randomUUID)
-
 	s.logger.Infof("mode=%s cids=%d ports=%d detect=%v timeout=%s interval=%s log-level=%s",
 		s.opts.Mode,
 		len(s.cids),
@@ -133,6 +131,11 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 	if !s.opts.Detect {
 		return nil
+	}
+
+	payloads, err := buildDetectPayloads(s.opts.Payloads)
+	if err != nil {
+		return err
 	}
 
 	if len(openTargets) == 0 {
@@ -278,6 +281,39 @@ func (s *Scanner) detectOnce(cid uint32, port uint32, payload []byte) ([]byte, e
 	response := append([]byte{}, buf[:n]...)
 	s.logger.Debugf("receive response target=%d:%d bytes=%d response=%q", cid, port, n, response)
 	return response, nil
+}
+
+func buildDetectPayloads(inputs []string) ([][]byte, error) {
+	if len(inputs) == 0 {
+		payloads := append([][]byte{}, detectPayloads...)
+		payloads = append(payloads, []byte(newUUID()))
+		return payloads, nil
+	}
+
+	payloads := make([][]byte, 0, len(inputs))
+	for _, input := range inputs {
+		payload, err := decodePayload(input)
+		if err != nil {
+			return nil, err
+		}
+		payloads = append(payloads, payload)
+	}
+	return payloads, nil
+}
+
+func decodePayload(input string) ([]byte, error) {
+	normalized := strings.ToLower(strings.TrimSpace(input))
+	if normalized == "empty" || normalized == "<empty>" {
+		return []byte{}, nil
+	}
+
+	escaped := strings.ReplaceAll(input, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	decoded, err := strconv.Unquote("\"" + escaped + "\"")
+	if err != nil {
+		return nil, fmt.Errorf("invalid payload %q: %w", input, err)
+	}
+	return []byte(decoded), nil
 }
 
 func resolveMode(input string) (string, uint32, error) {

@@ -65,3 +65,25 @@ func TestNewScanner_InvalidLogLevel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestBuildDetectPayloads_Default(t *testing.T) {
+	payloads, err := buildDetectPayloads(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(payloads) != 6 {
+		t.Fatalf("expected 6 payloads, got=%d", len(payloads))
+	}
+}
+
+func TestBuildDetectPayloads_Custom(t *testing.T) {
+	payloads, err := buildDetectPayloads([]string{"hello", "\\n", "empty"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := [][]byte{[]byte("hello"), []byte("\n"), []byte{}}
+	if !reflect.DeepEqual(payloads, want) {
+		t.Fatalf("payload mismatch: got=%q want=%q", payloads, want)
+	}
+}

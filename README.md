@@ -12,6 +12,7 @@ A simple vsock scanner built with Cobra.
 - default behavior checks connectivity only
 - `--detect` first completes connectivity scan, then probes only open targets
 - `--detect` sends payloads and prints non-empty responses
+- `--payload` customizes detect payloads (override default payload set)
 - terminal progress bar for scan progress
 - connectivity results are replayed in a full summary after connectivity phase
 - `--timeout` and `--interval` are optional, default disabled
@@ -36,6 +37,7 @@ go build -o vmap .
 - `--cid string` CID list/range/all
 - `--port string` port list/range/all (default `all`)
 - `--detect` send common payloads and print non-empty responses
+- `--payload strings` custom payload(s), repeat or comma-separated; supports escapes like `\n`, token `empty`
 - `--timeout duration` per-connection timeout, `0` means no timeout
 - `--interval duration` sleep interval between probes, `0` means no interval
 - `--log-level string` log level: `debug`, `info`, `warn`, `error` (default `info`)
@@ -49,14 +51,16 @@ go build -o vmap .
 
 ### Detect payloads
 
-When `--detect` is enabled, scanner first finishes connectivity checks for all targets, then tests only open ports with:
+When `--detect` is enabled, scanner first finishes connectivity checks for all targets, then tests only open ports.
 
-1. empty payload
-2. empty JSON (`{}`)
-3. single newline (`\n`)
-4. single digit (`1`)
-5. single letter (`a`)
-6. random UUID
+- If `--payload` is not provided, default payloads are used:
+  1. empty payload
+  2. empty JSON (`{}`)
+  3. single newline (`\n`)
+  4. single digit (`1`)
+  5. single letter (`a`)
+  6. random UUID
+- If one or more `--payload` values are provided, scanner sends only those custom payloads.
 
 Any non-empty response is printed.
 
