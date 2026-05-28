@@ -61,7 +61,8 @@ When `--detect` is enabled, scanner first finishes connectivity checks for all t
   4. single newline (`\n`)
   5. single digit (`1`)
   6. single letter (`a`)
-  7. random UUID
+  7. full HTTP GET request (`GET / HTTP/1.1` with `\r\n` headers and trailing `\r\n\r\n`)
+  8. random UUID
 - If one or more `--payload` values are provided, scanner sends only those custom payloads.
 
 Any non-empty response is printed, and detect hits are replayed again after detect phase completion.

@@ -71,19 +71,25 @@ func TestBuildDetectPayloads_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(payloads) != 7 {
-		t.Fatalf("expected 7 payloads, got=%d", len(payloads))
+	if len(payloads) != 8 {
+		t.Fatalf("expected 8 payloads, got=%d", len(payloads))
 	}
 
 	foundPreset := false
+	foundHTTPGet := false
 	for _, payload := range payloads {
 		if string(payload) == "{}\n" {
 			foundPreset = true
-			break
+		}
+		if strings.HasPrefix(string(payload), "GET / HTTP/1.1\r\n") {
+			foundHTTPGet = true
 		}
 	}
 	if !foundPreset {
 		t.Fatalf("expected default payloads to include {}\n preset")
+	}
+	if !foundHTTPGet {
+		t.Fatalf("expected default payloads to include HTTP GET preset")
 	}
 }
 

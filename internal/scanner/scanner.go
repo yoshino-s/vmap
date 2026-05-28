@@ -33,6 +33,7 @@ var detectPayloads = [][]byte{
 	[]byte("\n"),
 	[]byte("1"),
 	[]byte("a"),
+	[]byte("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: vmap\r\nAccept: */*\r\nConnection: close\r\n\r\n"),
 }
 
 type Options struct {
