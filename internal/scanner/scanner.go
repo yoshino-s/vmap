@@ -307,8 +307,7 @@ func decodePayload(input string) ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	escaped := strings.ReplaceAll(input, "\\", "\\\\")
-	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	escaped := strings.ReplaceAll(input, "\"", "\\\"")
 	decoded, err := strconv.Unquote("\"" + escaped + "\"")
 	if err != nil {
 		return nil, fmt.Errorf("invalid payload %q: %w", input, err)
