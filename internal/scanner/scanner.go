@@ -125,10 +125,11 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 	var payloads [][]byte
 	if s.opts.Detect {
-		payloads, err = buildDetectPayloads(s.opts.Payloads)
+		resolvedPayloads, err := buildDetectPayloads(s.opts.Payloads)
 		if err != nil {
 			return err
 		}
+		payloads = resolvedPayloads
 		s.logger.Infof("detect payloads configured=%d custom=%v", len(payloads), len(s.opts.Payloads) > 0)
 	}
 
