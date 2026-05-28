@@ -123,6 +123,15 @@ func (s *Scanner) Run(ctx context.Context) error {
 		s.opts.LogLevel,
 	)
 
+	var payloads [][]byte
+	if s.opts.Detect {
+		payloads, err = buildDetectPayloads(s.opts.Payloads)
+		if err != nil {
+			return err
+		}
+		s.logger.Infof("detect payloads configured=%d custom=%v", len(payloads), len(s.opts.Payloads) > 0)
+	}
+
 	openTargets, err := s.scanConnectivity(ctx)
 	if err != nil {
 		return err
@@ -131,11 +140,6 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 	if !s.opts.Detect {
 		return nil
-	}
-
-	payloads, err := buildDetectPayloads(s.opts.Payloads)
-	if err != nil {
-		return err
 	}
 
 	if len(openTargets) == 0 {
