@@ -10,6 +10,7 @@ A simple vsock scanner built with Cobra.
 - `--cid` supports list/range/all (`1,2,3`, `1-10`, `all`)
 - `--port` supports list/range/all (`1,2,3`, `1-10`, `all`), default `all`
 - default behavior checks connectivity only
+- `--detect` first completes connectivity scan, then probes only open targets
 - `--detect` sends payloads and prints non-empty responses
 - terminal progress bar for scan progress
 - `--timeout` and `--interval` are optional, default disabled
@@ -45,7 +46,7 @@ go build -o vmap .
 
 ### Detect payloads
 
-When `--detect` is enabled, each open port is tested with:
+When `--detect` is enabled, scanner first finishes connectivity checks for all targets, then tests only open ports with:
 
 1. empty payload
 2. empty JSON (`{}`)
