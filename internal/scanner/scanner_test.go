@@ -71,8 +71,19 @@ func TestBuildDetectPayloads_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(payloads) != 6 {
-		t.Fatalf("expected 6 payloads, got=%d", len(payloads))
+	if len(payloads) != 7 {
+		t.Fatalf("expected 7 payloads, got=%d", len(payloads))
+	}
+
+	foundPreset := false
+	for _, payload := range payloads {
+		if string(payload) == "{}\n" {
+			foundPreset = true
+			break
+		}
+	}
+	if !foundPreset {
+		t.Fatalf("expected default payloads to include {}\n preset")
 	}
 }
 

@@ -29,6 +29,7 @@ const (
 var detectPayloads = [][]byte{
 	{},
 	[]byte("{}"),
+	[]byte("{}\n"),
 	[]byte("\n"),
 	[]byte("1"),
 	[]byte("a"),
@@ -55,6 +56,13 @@ type Scanner struct {
 type scanTarget struct {
 	cid  uint32
 	port uint32
+}
+
+type detectHit struct {
+	cid      uint32
+	port     uint32
+	payload  []byte
+	response []byte
 }
 
 func New(opts Options) (*Scanner, error) {
@@ -149,9 +157,11 @@ func (s *Scanner) Run(ctx context.Context) error {
 	}
 
 	s.logger.Infof("detect phase starting, open-targets=%d", len(openTargets))
-	if err := s.runDetectPhase(ctx, openTargets, payloads); err != nil {
+	detectHits, err := s.runDetectPhase(ctx, openTargets, payloads)
+	if err != nil {
 		return err
 	}
+	s.printDetectSummary(detectHits)
 
 	return nil
 }
@@ -213,15 +223,16 @@ func (s *Scanner) printConnectivitySummary(targets []scanTarget) {
 	}
 }
 
-func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payloads [][]byte) error {
+func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payloads [][]byte) ([]detectHit, error) {
 	totalDetectProbes := int64(len(targets)) * int64(len(payloads))
 	bar := newProgressBar(totalDetectProbes, "detect")
 	defer finishProgressBar(bar)
 
+	detectHits := make([]detectHit, 0)
 	for _, target := range targets {
 		for _, payload := range payloads {
 			if err := ctx.Err(); err != nil {
-				return err
+				return nil, err
 			}
 
 			response, err := s.detectOnce(target.cid, target.port, payload)
@@ -229,6 +240,7 @@ func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payl
 				s.logger.Debugf("detect probe failed target=%d:%d payload=%q err=%v", target.cid, target.port, payload, err)
 			} else if len(response) > 0 {
 				s.logger.Infof("[detect] %d:%d payload=%q response=%q", target.cid, target.port, payload, response)
+				detectHits = append(detectHits, detectHit{cid: target.cid, port: target.port, payload: append([]byte{}, payload...), response: append([]byte{}, response...)})
 			} else {
 				s.logger.Debugf("detect probe empty response target=%d:%d payload=%q", target.cid, target.port, payload)
 			}
@@ -239,7 +251,18 @@ func (s *Scanner) runDetectPhase(ctx context.Context, targets []scanTarget, payl
 		}
 	}
 
-	return nil
+	return detectHits, nil
+}
+
+func (s *Scanner) printDetectSummary(hits []detectHit) {
+	s.logger.Infof("[summary] detect phase completed, hits=%d", len(hits))
+	if len(hits) == 0 {
+		return
+	}
+	s.logger.Infof("[summary] detect hits (replay):")
+	for _, hit := range hits {
+		s.logger.Infof("[detect] %d:%d payload=%q response=%q", hit.cid, hit.port, hit.payload, hit.response)
+	}
 }
 
 func (s *Scanner) detectOnce(cid uint32, port uint32, payload []byte) ([]byte, error) {

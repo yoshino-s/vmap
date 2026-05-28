@@ -15,6 +15,7 @@ A simple vsock scanner built with Cobra.
 - `--payload` customizes detect payloads (override default payload set)
 - terminal progress bar for scan progress
 - connectivity results are replayed in a full summary after connectivity phase
+- detect results are replayed in a full summary after detect phase
 - `--timeout` and `--interval` are optional, default disabled
 - `--log-level` controls verbosity: `debug`, `info`, `warn`, `error`
 - `CGO_ENABLED=0` compatible builds
@@ -56,13 +57,14 @@ When `--detect` is enabled, scanner first finishes connectivity checks for all t
 - If `--payload` is not provided, default payloads are used:
   1. empty payload
   2. empty JSON (`{}`)
-  3. single newline (`\n`)
-  4. single digit (`1`)
-  5. single letter (`a`)
-  6. random UUID
+  3. JSON with newline (`{}\n`)
+  4. single newline (`\n`)
+  5. single digit (`1`)
+  6. single letter (`a`)
+  7. random UUID
 - If one or more `--payload` values are provided, scanner sends only those custom payloads.
 
-Any non-empty response is printed.
+Any non-empty response is printed, and detect hits are replayed again after detect phase completion.
 
 ### Logging
 
