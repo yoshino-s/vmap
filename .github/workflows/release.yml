@@ -51,9 +51,9 @@ jobs:
           CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -trimpath -ldflags "-s -w" -o "dist/vmap" .
           tar -C dist -czf "dist/${NAME}.tar.gz" vmap
 
-          # Thin artifact (smaller binary identity + max xz compression)
+          # Thin artifact (smaller binary identity + gzip archive)
           CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o "dist/vmap-thin" .
-          xz -T0 -9e -c "dist/vmap-thin" > "dist/${NAME}_thin.xz"
+          tar -C dist -czf "dist/${NAME}_thin.tar.gz" vmap-thin
 
           rm -f dist/vmap dist/vmap-thin
 
@@ -61,9 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/*.tar.gz
-            dist/*_thin.xz
+          path: dist/*.tar.gz
           if-no-files-found: error
 
   release:
@@ -81,7 +79,5 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.tar.gz
-            dist/*_thin.xz
+          files: dist/*.tar.gz
           generate_release_notes: true
