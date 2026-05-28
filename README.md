@@ -6,10 +6,12 @@ A simple vsock scanner built with Cobra.
 
 - Cobra-based CLI
 - `--mode [host|guest|auto]`, default `auto`
+- in `auto` mode, runtime detection picks `host` or `guest`; detected mode is applied and logged
 - `--cid` supports list/range/all (`1,2,3`, `1-10`, `all`)
 - `--port` supports list/range/all (`1,2,3`, `1-10`, `all`), default `all`
-- Default behavior checks connectivity only
+- default behavior checks connectivity only
 - `--detect` sends payloads and prints non-empty responses
+- terminal progress bar for scan progress
 - `--timeout` and `--interval` are optional, default disabled
 - `CGO_ENABLED=0` compatible builds
 
@@ -38,7 +40,8 @@ go build -o vmap .
 
 - host mode: scan `all`
 - guest mode: scan CID `2` and local CID
-- if local CID cannot be retrieved: scan `all`
+- auto mode: detect runtime role first; if detection fails, fallback to CID `all`
+- if local CID cannot be retrieved in guest mode: scan `all`
 
 ### Detect payloads
 
@@ -55,10 +58,10 @@ Any non-empty response is printed.
 
 ## Notes
 
-- This tool supports Linux runtime for actual vsock probing.
-- Non-Linux builds are provided for packaging compatibility but return an unsupported error at runtime.
-- `all` CID range in this tool is `0-65535`.
-- `all` port range is `1-65535`.
+- this tool supports Linux runtime for actual vsock probing
+- non-Linux builds are provided for packaging compatibility but return an unsupported error at runtime
+- `all` CID range in this tool is `0-65535`
+- `all` port range is `1-65535`
 
 ## Release
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/schollz/progressbar/v3"
 	"vmap/internal/rangeparse"
 	"vmap/internal/vsock"
 )
@@ -46,9 +48,15 @@ type Scanner struct {
 }
 
 func New(opts Options) (*Scanner, error) {
+	requestedMode := opts.Mode
 	resolvedMode, localCID, modeErr := resolveMode(opts.Mode)
 	if modeErr != nil {
 		return nil, modeErr
+	}
+
+	if requestedMode == modeAuto && (resolvedMode == modeHost || resolvedMode == modeGuest) {
+		opts.Mode = resolvedMode
+		fmt.Printf("[info] auto mode detected runtime=%s local-cid=%d; overriding mode\n", resolvedMode, localCID)
 	}
 
 	cids, err := resolveCIDTargets(opts.CIDInput, resolvedMode, localCID)
@@ -75,11 +83,11 @@ func New(opts Options) (*Scanner, error) {
 		return nil, errors.New("--timeout must be >= 0")
 	}
 
-	if opts.Mode == modeAuto && opts.CIDInput == "" && localCID == 0 {
+	if requestedMode == modeAuto && opts.CIDInput == "" && resolvedMode == modeAuto {
 		fmt.Println("[warn] local CID unavailable in auto mode; CID target falls back to all")
 	}
 
-	if opts.Mode == modeGuest && opts.CIDInput == "" && localCID == 0 {
+	if requestedMode == modeGuest && opts.CIDInput == "" && localCID == 0 {
 		fmt.Println("[warn] local CID unavailable in guest mode; CID target falls back to all")
 	}
 
@@ -100,6 +108,10 @@ func (s *Scanner) Run(ctx context.Context) error {
 		durationLabel(s.opts.Interval),
 	)
 
+	totalTargets := int64(len(s.cids)) * int64(len(s.ports))
+	bar := newProgressBar(totalTargets)
+	defer finishProgressBar(bar)
+
 	first := true
 	for _, cid := range s.cids {
 		for _, port := range s.ports {
@@ -113,7 +125,14 @@ func (s *Scanner) Run(ctx context.Context) error {
 			first = false
 
 			if err := s.probe(cid, port, payloads); err != nil {
+				if bar != nil {
+					_ = bar.Add(1)
+				}
 				continue
+			}
+
+			if bar != nil {
+				_ = bar.Add(1)
 			}
 		}
 	}
@@ -276,4 +295,29 @@ func isTimeout(err error) bool {
 		return te.Timeout()
 	}
 	return false
+}
+
+func newProgressBar(total int64) *progressbar.ProgressBar {
+	if total <= 0 {
+		return nil
+	}
+
+	return progressbar.NewOptions64(
+		total,
+		progressbar.OptionSetDescription("scanning"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(20),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionThrottle(100*time.Millisecond),
+	)
+}
+
+func finishProgressBar(bar *progressbar.ProgressBar) {
+	if bar == nil {
+		return
+	}
+	_ = bar.Finish()
+	fmt.Fprintln(os.Stderr)
 }
